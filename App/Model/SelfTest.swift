@@ -78,6 +78,7 @@ enum SelfTest {
         snapshot.presence.lastHeard = todayAt(23)
 
         snapshot.breakUntil = todayAt(23, 15)
+        snapshot.presence.lastHeard = todayAt(23, 10)
         if case .onBreak = snapshot.state(at: todayAt(23, 5)) {
             check("Break unlocks", true)
         } else { check("Break unlocks", false) }
