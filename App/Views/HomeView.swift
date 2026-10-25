@@ -77,7 +77,9 @@ struct HomeView: View {
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.tertiary)
                 }
+                .contentShape(.rect)
             }
+            .buttonStyle(.plain)
 
             Picker("What to lock", selection: Binding(
                 get: { model.plan.style },
@@ -165,7 +167,9 @@ struct HomeView: View {
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.tertiary)
                 }
+                .contentShape(.rect)
             }
+            .buttonStyle(.plain)
         } header: {
             Text("Bedroom")
         } footer: {
