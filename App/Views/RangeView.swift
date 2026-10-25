@@ -80,9 +80,9 @@ struct RangeView: View {
 
     private func label(_ value: Int) -> String {
         switch value {
-        case -55...: "Very close"
-        case -68 ..< -55: "Close"
-        case -80 ..< -68: "Nearby"
+        case (-55)...: "Very close"
+        case (-68)..<(-55): "Close"
+        case (-80)..<(-68): "Nearby"
         default: "Far away"
         }
     }
