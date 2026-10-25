@@ -49,7 +49,10 @@ end
 # Also shows the message as a note on the workflow run's summary page.
 def note(message)
   UI.important(message)
-  puts "::notice::#{message.gsub(TEAMID, 'TEAM')}" if ENV["CI"]
+  return unless ENV["CI"]
+  # Written straight to the job's output (fastlane's own logger adds a prefix GitHub ignores).
+  STDOUT.write("::notice::#{message.gsub(TEAMID, 'TEAM').gsub(/[\r\n]+/, ' ')}\n")
+  STDOUT.flush
 end
 
 def mac_installer_identity
