@@ -44,7 +44,7 @@ struct RangeView: View {
                 }
 
                 Section {
-                    Slider(value: $threshold, in: -95 ... -45, step: 1) {
+                    Slider(value: $threshold, in: (-95)...(-45), step: 1) {
                         Text("Range")
                     } minimumValueLabel: {
                         Text("Bigger").font(.caption)
