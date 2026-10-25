@@ -13,7 +13,12 @@ echo "Using simulator $UDID"
 
 xcodebuild -project Curfew.xcodeproj -scheme Curfew -configuration Debug -sdk iphonesimulator \
   -destination "id=$UDID" -derivedDataPath build CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
-grep -q "BUILD SUCCEEDED" build.log || { echo "::error::Build failed"; grep -E "error:" build.log | sort -u | head -80; exit 1; }
+if ! grep -q "BUILD SUCCEEDED" build.log; then
+  echo "::error::Build failed"
+  # Each error as a note on the run's summary page, so it can be read without the full log.
+  grep -E "error:" build.log | sed -E 's#^.*/(App|Shared|Widget|Monitor|Mac)/#\1/#' | sort -u | head -40 | while read -r line; do echo "::error::$line"; done
+  exit 1
+fi
 
 APP=build/Build/Products/Debug-iphonesimulator/Curfew.app
 BID=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist")

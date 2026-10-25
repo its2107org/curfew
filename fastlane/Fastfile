@@ -46,6 +46,12 @@ def profile_has_family_controls?(identifier)
   !!(plist && plist.dig("Entitlements", FAMILY_CONTROLS))
 end
 
+# Also shows the message as a note on the workflow run's summary page.
+def note(message)
+  UI.important(message)
+  puts "::notice::#{message.gsub(TEAMID, 'TEAM')}" if ENV["CI"]
+end
+
 def mac_installer_identity
   line = `security find-identity -v`.lines.find { |l| l =~ /Installer/ }
   line && line[/"(.+)"/, 1]
@@ -64,20 +70,20 @@ platform :ios do
     names.each do |identifier, name|
       Spaceship::ConnectAPI::BundleId.find(identifier) ||
         Spaceship::ConnectAPI::BundleId.create(name: name, identifier: identifier, platform: "IOS")
-      UI.success("Identifier ready: #{identifier}")
+      note("Identifier ready: #{identifier}")
     end
     Spaceship::ConnectAPI::BundleId.find(MAC_ID) ||
       Spaceship::ConnectAPI::BundleId.create(name: "Curfew for Mac", identifier: MAC_ID, platform: "MAC_OS")
-    UI.success("Identifier ready: #{MAC_ID}")
+    note("Identifier ready: #{MAC_ID}")
 
     # Switch on Screen Time (Family Controls) where Apple lets us. Until Apple approves the
     # distribution version, App Store profiles simply leave it out.
     SCREEN_TIME_IDS.each do |identifier|
       begin
         Spaceship::ConnectAPI::BundleId.find(identifier).update_capability("FAMILY_CONTROLS", enabled: true)
-        UI.success("Family Controls switched on for #{identifier}")
+        note("Family Controls switched on for #{identifier}")
       rescue => e
-        UI.important("Couldn't switch on Family Controls for #{identifier}: #{e.message}")
+        note("Couldn't switch on Family Controls for #{identifier}: #{e.message}")
       end
     end
   end
@@ -95,7 +101,7 @@ platform :ios do
       app_identifier: IDENTIFIERS.values
     )
     SCREEN_TIME_IDS.each do |identifier|
-      UI.message("#{identifier}: Screen Time locking #{profile_has_family_controls?(identifier) ? 'INCLUDED' : 'not included yet'}")
+      note("#{identifier}: Screen Time locking #{profile_has_family_controls?(identifier) ? 'INCLUDED' : 'not included yet'}")
     end
     begin
       match(
@@ -108,7 +114,7 @@ platform :ios do
         app_identifier: [MAC_ID]
       )
     rescue => e
-      UI.important("Mac signing not ready: #{e.message}")
+      note("Mac signing not ready: #{e.message}")
     end
   end
 
@@ -135,9 +141,9 @@ platform :ios do
       identifier = IDENTIFIERS[target]
       if profile_has_family_controls?(identifier)
         sh("/usr/libexec/PlistBuddy -c 'Add :#{FAMILY_CONTROLS} bool true' '#{GITHUB_WORKSPACE}/#{path}' || true")
-        UI.success("#{target}: Screen Time locking included")
+        note("#{target}: Screen Time locking included")
       else
-        UI.important("#{target}: Screen Time locking not approved by Apple yet; building without it")
+        note("#{target}: Screen Time locking not approved by Apple yet; building without it")
       end
     end
 
@@ -236,14 +242,14 @@ platform :ios do
     setup_ci if ENV["CI"]
     api_key
     (IDENTIFIERS.values + [MAC_ID]).each do |id|
-      UI.message("#{Spaceship::ConnectAPI::BundleId.find(id) ? 'Found' : 'Missing'} identifier #{id}")
+      note("#{Spaceship::ConnectAPI::BundleId.find(id) ? 'Found' : 'Missing'} identifier #{id}")
     end
     [BUNDLE_ID, MAC_ID].each do |id|
-      UI.message(Spaceship::ConnectAPI::App.find(id) ? "App record exists for #{id}" : "No app record yet for #{id}")
+      note(Spaceship::ConnectAPI::App.find(id) ? "App record exists for #{id}" : "No app record yet for #{id}")
     end
     match(type: "appstore", readonly: true, git_basic_authorization: match_auth, app_identifier: IDENTIFIERS.values)
     SCREEN_TIME_IDS.each do |identifier|
-      UI.message("#{identifier}: Screen Time locking #{profile_has_family_controls?(identifier) ? 'INCLUDED' : 'not included yet'}")
+      note("#{identifier}: Screen Time locking #{profile_has_family_controls?(identifier) ? 'INCLUDED' : 'not included yet'}")
     end
     UI.success("Secrets work and the certificate store is reachable")
   end
@@ -254,7 +260,7 @@ platform :ios do
     [BUNDLE_ID, MAC_ID].each do |id|
       app = Spaceship::ConnectAPI::App.find(id)
       unless app
-        UI.important("No App Store Connect app for #{id} yet")
+        note("No App Store Connect app for #{id} yet")
         next
       end
 
@@ -270,7 +276,7 @@ platform :ios do
         })
         group = app.get_beta_groups.find { |g| g.name == "Me" }
         UI.user_error!("Group 'Me' was not created for #{id}") unless group
-        UI.success("Created internal TestFlight group 'Me' for #{id}")
+        note("Created internal TestFlight group 'Me' for #{id}")
       end
 
       Spaceship::ConnectAPI::User.all.each do |user|

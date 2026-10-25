@@ -26,10 +26,11 @@ jobs:
       - name: Build, run and screenshot
         run: scripts/simulator-check.sh
       - name: Build the Mac helper
+        if: always()
         run: |
           xcodebuild -project Curfew.xcodeproj -scheme CurfewMac -configuration Debug -destination "generic/platform=macOS" \
             -derivedDataPath build-mac CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build-mac.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
-          grep -q "BUILD SUCCEEDED" build-mac.log || { echo "::error::Mac build failed"; grep -E "error:" build-mac.log | sort -u | head -60; exit 1; }
+          grep -q "BUILD SUCCEEDED" build-mac.log || { echo "::error::Mac build failed"; grep -E "error:" build-mac.log | sed -E 's#^.*/(Mac|Shared)/#\1/#' | sort -u | head -40 | while read -r line; do echo "::error::$line"; done; exit 1; }
       - name: Publish screenshots to the screenshots branch
         if: always()
         run: |
