@@ -1,0 +1,133 @@
+{
+  "checks" : [
+    {
+      "check" : "Overnight window covers 23:30",
+      "result" : "ok"
+    },
+    {
+      "check" : "Overnight window covers 03:00",
+      "result" : "ok"
+    },
+    {
+      "check" : "Overnight window ends at 07:00",
+      "result" : "ok"
+    },
+    {
+      "check" : "Overnight window starts at 22:00",
+      "result" : "ok"
+    },
+    {
+      "check" : "Not inside at 21:59",
+      "result" : "ok"
+    },
+    {
+      "check" : "Not inside at noon",
+      "result" : "ok"
+    },
+    {
+      "check" : "School-night window on Monday night",
+      "result" : "ok"
+    },
+    {
+      "check" : "School-night window carries into Friday morning",
+      "result" : "ok"
+    },
+    {
+      "check" : "No school-night window on Friday night",
+      "result" : "ok"
+    },
+    {
+      "check" : "No school-night window on Saturday morning",
+      "result" : "ok"
+    },
+    {
+      "check" : "School-night window on Sunday night",
+      "result" : "ok"
+    },
+    {
+      "check" : "Daytime window covers 14:00",
+      "result" : "ok"
+    },
+    {
+      "check" : "Daytime window ends at 15:00",
+      "result" : "ok"
+    },
+    {
+      "check" : "Switched-off window never applies",
+      "result" : "ok"
+    },
+    {
+      "check" : "Next edge after noon is 22:00",
+      "result" : "ok"
+    },
+    {
+      "check" : "Next edge after 23:00 is 07:00",
+      "result" : "ok"
+    },
+    {
+      "check" : "Plan in schedule at 23:00",
+      "result" : "ok"
+    },
+    {
+      "check" : "Plan not in schedule at 18:00",
+      "result" : "ok"
+    },
+    {
+      "check" : "Next start from 18:00 is 22:00",
+      "result" : "ok"
+    },
+    {
+      "check" : "Next end from 23:00 is 07:00 tomorrow",
+      "result" : "ok"
+    },
+    {
+      "check" : "Overlapping windows end at the later time",
+      "result" : "ok"
+    },
+    {
+      "check" : "Any-time plan applies at noon",
+      "result" : "ok"
+    },
+    {
+      "check" : "Locked in the bedroom at bedtime",
+      "result" : "ok"
+    },
+    {
+      "check" : "Free in the bedroom before bedtime",
+      "result" : "ok"
+    },
+    {
+      "check" : "Old reading counts as away",
+      "result" : "ok"
+    },
+    {
+      "check" : "Break unlocks",
+      "result" : "ok"
+    },
+    {
+      "check" : "Locked again after the break",
+      "result" : "ok"
+    },
+    {
+      "check" : "Away at bedtime stays unlocked",
+      "result" : "ok"
+    },
+    {
+      "check" : "Switched off never locks",
+      "result" : "ok"
+    },
+    {
+      "check" : "Snapshot saves and loads",
+      "result" : "ok"
+    },
+    {
+      "check" : "Times read like 22:00 – 07:00",
+      "result" : "ok"
+    },
+    {
+      "check" : "Weekday text",
+      "result" : "ok"
+    }
+  ],
+  "summary" : "all passed"
+}
