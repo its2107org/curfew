@@ -1,0 +1,56 @@
+name: Check build and screenshots
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    name: Build for the simulator and the Mac, run the self-checks and take screenshots
+    runs-on: macos-26
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select Xcode
+        run: sudo xcode-select --switch /Applications/Xcode_26.5.app/Contents/Developer
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Build, run and screenshot
+        run: scripts/simulator-check.sh
+      - name: Build the Mac helper
+        run: |
+          xcodebuild -project Curfew.xcodeproj -scheme CurfewMac -configuration Debug -destination "generic/platform=macOS" \
+            -derivedDataPath build-mac CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build-mac.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build-mac.log || { echo "::error::Mac build failed"; grep -E "error:" build-mac.log | sort -u | head -60; exit 1; }
+      - name: Publish screenshots to the screenshots branch
+        if: always()
+        run: |
+          set -e
+          [ -d shots ] || exit 0
+          git config user.name "curfew-ci"
+          git config user.email "curfew-ci@users.noreply.github.com"
+          rm -rf /tmp/shots && cp -R shots /tmp/shots
+          git checkout --orphan screenshots-tmp
+          git rm -rf --quiet . || true
+          git clean -fdxq
+          cp -R /tmp/shots/* .
+          git add -A
+          git commit -m "Screenshots for ${GITHUB_SHA::7}" --quiet
+          git push -f origin HEAD:screenshots
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: simulator-check
+          path: |
+            shots
+            build.log
+            build-mac.log

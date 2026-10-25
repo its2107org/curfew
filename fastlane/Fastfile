@@ -1,0 +1,301 @@
+# Builds Curfew (iPhone app and Mac helper) and sends both to TestFlight. Uses the same Apple
+# setup as Ian's other apps (the same secrets and the same Match-Secrets certificate store).
+
+default_platform(:ios)
+
+TEAMID = ENV["TEAMID"].to_s
+GH_PAT = ENV["GH_PAT"]
+GITHUB_WORKSPACE = ENV["GITHUB_WORKSPACE"] || File.expand_path("..", __dir__)
+GITHUB_REPOSITORY_OWNER = ENV["GITHUB_REPOSITORY_OWNER"]
+ENV["FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT"] = "120"
+
+BUNDLE_ID = "com.#{TEAMID}.curfew"
+MAC_ID = "#{BUNDLE_ID}.mac"
+PROJECT = "#{GITHUB_WORKSPACE}/Curfew.xcodeproj"
+IDENTIFIERS = {
+  "Curfew" => BUNDLE_ID,
+  "CurfewWidget" => "#{BUNDLE_ID}.Widget",
+  "CurfewMonitor" => "#{BUNDLE_ID}.Monitor"
+}
+ENTITLEMENTS = {
+  "Curfew" => "App/Curfew.entitlements",
+  "CurfewMonitor" => "Monitor/CurfewMonitor.entitlements"
+}
+# Locking apps needs Apple's "Family Controls" permission on these two.
+SCREEN_TIME_IDS = [BUNDLE_ID, "#{BUNDLE_ID}.Monitor"]
+FAMILY_CONTROLS = "com.apple.developer.family-controls"
+
+def api_key
+  app_store_connect_api_key(
+    key_id: ENV["FASTLANE_KEY_ID"],
+    issuer_id: ENV["FASTLANE_ISSUER_ID"],
+    key_content: ENV["FASTLANE_KEY"]
+  )
+end
+
+def match_auth
+  Base64.strict_encode64("#{GITHUB_REPOSITORY_OWNER}:#{GH_PAT}")
+end
+
+# Whether the signing profile just fetched for this identifier includes Screen Time (Family Controls).
+def profile_has_family_controls?(identifier)
+  key = ENV.keys.find { |k| k.start_with?("sigh_#{identifier}_appstore") && k.end_with?("profile-path") }
+  return false unless key && File.exist?(ENV[key])
+  xml = `security cms -D -i "#{ENV[key]}" 2>/dev/null`
+  plist = Plist.parse_xml(xml) rescue nil
+  !!(plist && plist.dig("Entitlements", FAMILY_CONTROLS))
+end
+
+def mac_installer_identity
+  line = `security find-identity -v`.lines.find { |l| l =~ /Installer/ }
+  line && line[/"(.+)"/, 1]
+end
+
+platform :ios do
+  desc "Create the app's identifiers with Apple"
+  lane :identifiers do
+    api_key
+
+    names = {
+      BUNDLE_ID => "Curfew",
+      "#{BUNDLE_ID}.Widget" => "Curfew Widget",
+      "#{BUNDLE_ID}.Monitor" => "Curfew Monitor"
+    }
+    names.each do |identifier, name|
+      Spaceship::ConnectAPI::BundleId.find(identifier) ||
+        Spaceship::ConnectAPI::BundleId.create(name: name, identifier: identifier, platform: "IOS")
+      UI.success("Identifier ready: #{identifier}")
+    end
+    Spaceship::ConnectAPI::BundleId.find(MAC_ID) ||
+      Spaceship::ConnectAPI::BundleId.create(name: "Curfew for Mac", identifier: MAC_ID, platform: "MAC_OS")
+    UI.success("Identifier ready: #{MAC_ID}")
+
+    # Switch on Screen Time (Family Controls) where Apple lets us. Until Apple approves the
+    # distribution version, App Store profiles simply leave it out.
+    SCREEN_TIME_IDS.each do |identifier|
+      begin
+        Spaceship::ConnectAPI::BundleId.find(identifier).update_capability("FAMILY_CONTROLS", enabled: true)
+        UI.success("Family Controls switched on for #{identifier}")
+      rescue => e
+        UI.important("Couldn't switch on Family Controls for #{identifier}: #{e.message}")
+      end
+    end
+  end
+
+  desc "Create or refresh signing certificates and profiles"
+  lane :certs do |options|
+    setup_ci if ENV["CI"]
+    api_key
+    match(
+      type: "appstore",
+      readonly: false,
+      force: options[:force] || false,
+      force_for_new_devices: false,
+      git_basic_authorization: match_auth,
+      app_identifier: IDENTIFIERS.values
+    )
+    SCREEN_TIME_IDS.each do |identifier|
+      UI.message("#{identifier}: Screen Time locking #{profile_has_family_controls?(identifier) ? 'INCLUDED' : 'not included yet'}")
+    end
+    begin
+      match(
+        type: "appstore",
+        platform: "macos",
+        readonly: false,
+        force: options[:force] || false,
+        additional_cert_types: ["mac_installer_distribution"],
+        git_basic_authorization: match_auth,
+        app_identifier: [MAC_ID]
+      )
+    rescue => e
+      UI.important("Mac signing not ready: #{e.message}")
+    end
+  end
+
+  desc "Build Curfew for iPhone"
+  lane :build_curfew do
+    setup_ci if ENV["CI"]
+    key = api_key
+
+    update_project_team(path: PROJECT, teamid: TEAMID)
+
+    previous = latest_testflight_build_number(app_identifier: BUNDLE_ID, api_key: key, initial_build_number: 0)
+    increment_build_number(xcodeproj: PROJECT, build_number: previous + 1)
+
+    match(
+      type: "appstore",
+      readonly: true,
+      git_basic_authorization: match_auth,
+      app_identifier: IDENTIFIERS.values
+    )
+    mapping = Actions.lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING]
+
+    # Ask for Screen Time only where Apple's approval has come through, so the build always signs.
+    ENTITLEMENTS.each do |target, path|
+      identifier = IDENTIFIERS[target]
+      if profile_has_family_controls?(identifier)
+        sh("/usr/libexec/PlistBuddy -c 'Add :#{FAMILY_CONTROLS} bool true' '#{GITHUB_WORKSPACE}/#{path}' || true")
+        UI.success("#{target}: Screen Time locking included")
+      else
+        UI.important("#{target}: Screen Time locking not approved by Apple yet; building without it")
+      end
+    end
+
+    IDENTIFIERS.each do |target, identifier|
+      update_code_signing_settings(
+        path: PROJECT,
+        use_automatic_signing: false,
+        team_id: TEAMID,
+        profile_name: mapping[identifier],
+        code_sign_identity: "iPhone Distribution",
+        targets: [target]
+      )
+    end
+
+    gym(
+      project: PROJECT,
+      scheme: "Curfew",
+      configuration: "Release",
+      export_method: "app-store",
+      output_name: "Curfew.ipa",
+      destination: "generic/platform=iOS",
+      xcargs: "DEVELOPMENT_TEAM=#{TEAMID}",
+      buildlog_path: "buildlog"
+    )
+  end
+
+  desc "Send the iPhone app to TestFlight"
+  lane :release do
+    upload_to_testflight(
+      api_key: api_key,
+      ipa: "Curfew.ipa",
+      skip_waiting_for_build_processing: true,
+      changelog: "Curfew #{last_git_commit[:abbreviated_commit_hash]}"
+    )
+  end
+
+  desc "Build the Mac helper"
+  lane :build_mac do
+    setup_ci if ENV["CI"]
+    key = api_key
+
+    update_project_team(path: PROJECT, teamid: TEAMID)
+    previous = latest_testflight_build_number(app_identifier: MAC_ID, platform: "osx", api_key: key, initial_build_number: 0)
+    increment_build_number(xcodeproj: PROJECT, build_number: previous + 1)
+
+    match(
+      type: "appstore",
+      platform: "macos",
+      readonly: true,
+      additional_cert_types: ["mac_installer_distribution"],
+      git_basic_authorization: match_auth,
+      app_identifier: [MAC_ID]
+    )
+    mapping = Actions.lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING]
+    sh("security find-identity -v || true")
+
+    update_code_signing_settings(
+      path: PROJECT,
+      use_automatic_signing: false,
+      team_id: TEAMID,
+      profile_name: mapping[MAC_ID],
+      code_sign_identity: "Apple Distribution",
+      targets: ["CurfewMac"]
+    )
+
+    installer = mac_installer_identity
+    UI.user_error!("No Mac installer certificate found") unless installer
+    gym(
+      project: PROJECT,
+      scheme: "CurfewMac",
+      configuration: "Release",
+      export_method: "app-store",
+      output_name: "CurfewMac",
+      destination: "generic/platform=macOS",
+      installer_cert_name: installer,
+      xcargs: "DEVELOPMENT_TEAM=#{TEAMID}",
+      buildlog_path: "buildlog-mac"
+    )
+  end
+
+  desc "Send the Mac helper to TestFlight"
+  lane :release_mac do
+    pkg = Dir["*.pkg"].first
+    UI.user_error!("No Mac package to upload") unless pkg
+    upload_to_testflight(
+      api_key: api_key,
+      pkg: pkg,
+      app_platform: "osx",
+      skip_waiting_for_build_processing: true,
+      changelog: "Curfew for Mac #{last_git_commit[:abbreviated_commit_hash]}"
+    )
+  end
+
+  desc "Check the secrets and Apple access work"
+  lane :check_setup do
+    setup_ci if ENV["CI"]
+    api_key
+    (IDENTIFIERS.values + [MAC_ID]).each do |id|
+      UI.message("#{Spaceship::ConnectAPI::BundleId.find(id) ? 'Found' : 'Missing'} identifier #{id}")
+    end
+    [BUNDLE_ID, MAC_ID].each do |id|
+      UI.message(Spaceship::ConnectAPI::App.find(id) ? "App record exists for #{id}" : "No app record yet for #{id}")
+    end
+    match(type: "appstore", readonly: true, git_basic_authorization: match_auth, app_identifier: IDENTIFIERS.values)
+    SCREEN_TIME_IDS.each do |identifier|
+      UI.message("#{identifier}: Screen Time locking #{profile_has_family_controls?(identifier) ? 'INCLUDED' : 'not included yet'}")
+    end
+    UI.success("Secrets work and the certificate store is reachable")
+  end
+
+  desc "Make sure Ian is set up as a TestFlight tester for both apps (safe to repeat)"
+  lane :testers do
+    api_key
+    [BUNDLE_ID, MAC_ID].each do |id|
+      app = Spaceship::ConnectAPI::App.find(id)
+      unless app
+        UI.important("No App Store Connect app for #{id} yet")
+        next
+      end
+
+      group = app.get_beta_groups.find { |g| g.name == "Me" }
+      unless group
+        # Sent by hand: fastlane's own helper adds a public-link setting Apple now rejects for internal groups.
+        Spaceship::ConnectAPI.client.test_flight_request_client.post("v1/betaGroups", {
+          data: {
+            type: "betaGroups",
+            attributes: { name: "Me", isInternalGroup: true, hasAccessToAllBuilds: true },
+            relationships: { app: { data: { type: "apps", id: app.id } } }
+          }
+        })
+        group = app.get_beta_groups.find { |g| g.name == "Me" }
+        UI.user_error!("Group 'Me' was not created for #{id}") unless group
+        UI.success("Created internal TestFlight group 'Me' for #{id}")
+      end
+
+      Spaceship::ConnectAPI::User.all.each do |user|
+        email = user.email.to_s.empty? ? user.username.to_s : user.email.to_s
+        next if email.empty?
+        begin
+          Spaceship::ConnectAPI.post_beta_tester_assignment(
+            beta_group_ids: [group.id],
+            attributes: { email: email, firstName: user.first_name, lastName: user.last_name }
+          )
+          UI.success("Added a team member to 'Me' for #{id}")
+        rescue => e
+          UI.important("Tester not added (may already be in the group): #{e.message}")
+        end
+      end
+
+      build = Spaceship::ConnectAPI::Build.all(app_id: app.id, sort: "-uploadedDate", limit: 1).first
+      if build
+        begin
+          build.add_beta_groups(beta_groups: [group])
+          UI.success("Newest build of #{id} shared with the group")
+        rescue => e
+          UI.important("Could not share newest build yet (#{e.message}); automatic distribution will cover it")
+        end
+      end
+    end
+  end
+end

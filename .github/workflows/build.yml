@@ -1,0 +1,83 @@
+name: 3. Build Curfew
+run-name: Build Curfew (${{ github.ref_name }})
+on:
+  workflow_dispatch:
+    inputs:
+      which:
+        description: "What to build"
+        type: choice
+        options: [both, iphone, mac]
+        default: both
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "scripts/**", ".github/workflows/ci.yml"]
+  schedule:
+    # Rebuild on the 1st of every month so the TestFlight copies never expire (they last 90 days).
+    - cron: "37 5 1 * *"
+
+env:
+  TEAMID: ${{ secrets.TEAMID }}
+  GH_PAT: ${{ secrets.GH_PAT }}
+  FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
+  FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
+  FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
+  MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+
+jobs:
+  iphone:
+    name: Build the iPhone app and send to TestFlight
+    if: github.event_name != 'workflow_dispatch' || inputs.which != 'mac'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select Xcode
+        run: sudo xcode-select --switch /Applications/Xcode_26.5.app/Contents/Developer
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Install fastlane
+        run: bundle install
+      - name: Sync clock
+        run: sudo sntp -sS time.windows.com || true
+      - name: Build
+        run: bundle exec fastlane build_curfew
+      - name: Send to TestFlight
+        run: bundle exec fastlane release
+      - name: Keep the build log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-log-iphone
+          path: |
+            buildlog
+            *.ipa
+
+  mac:
+    name: Build the Mac helper and send to TestFlight
+    if: github.event_name != 'workflow_dispatch' || inputs.which != 'iphone'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select Xcode
+        run: sudo xcode-select --switch /Applications/Xcode_26.5.app/Contents/Developer
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Install fastlane
+        run: bundle install
+      - name: Sync clock
+        run: sudo sntp -sS time.windows.com || true
+      - name: Build
+        run: bundle exec fastlane build_mac
+      - name: Send to TestFlight
+        run: bundle exec fastlane release_mac
+      - name: Keep the build log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-log-mac
+          path: |
+            buildlog-mac
+            *.pkg

@@ -1,0 +1,177 @@
+name: Curfew
+options:
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    # Replaced with the real Apple Team ID when building for TestFlight.
+    DEVELOPMENT_TEAM: CURFEWDEV0
+    CURFEW_BUNDLE_ID: com.$(DEVELOPMENT_TEAM).curfew
+    CURFEW_KEYCHAIN_GROUP: $(AppIdentifierPrefix)com.$(DEVELOPMENT_TEAM).curfew.shared
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Manual
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+targets:
+  Curfew:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Shared/Core
+      - path: Shared/Blocking
+      - path: Shared/Common
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Curfew
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.productivity
+        CurfewKeychainGroup: $(CURFEW_KEYCHAIN_GROUP)
+        NSBluetoothAlwaysUsageDescription: Curfew listens for your Mac in the bedroom so it knows when you're in there.
+        UIBackgroundModes:
+          - bluetooth-central
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        CFBundleURLTypes:
+          - CFBundleURLName: $(PRODUCT_BUNDLE_IDENTIFIER)
+            CFBundleURLSchemes:
+              - curfew
+    entitlements:
+      path: App/Curfew.entitlements
+      properties:
+        keychain-access-groups:
+          - $(CURFEW_KEYCHAIN_GROUP)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(CURFEW_BUNDLE_ID)
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+    dependencies:
+      - target: CurfewWidget
+        embed: true
+        codeSign: true
+      - target: CurfewMonitor
+        embed: true
+        codeSign: true
+
+  # Wakes up at the start and end of each bedtime window to lock or unlock the apps.
+  CurfewMonitor:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Monitor
+      - path: Shared/Core
+      - path: Shared/Blocking
+      - path: Shared/Common
+    info:
+      path: Monitor/Info.plist
+      properties:
+        CFBundleDisplayName: Curfew Monitor
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CurfewKeychainGroup: $(CURFEW_KEYCHAIN_GROUP)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).CurfewMonitor
+    entitlements:
+      path: Monitor/CurfewMonitor.entitlements
+      properties:
+        keychain-access-groups:
+          - $(CURFEW_KEYCHAIN_GROUP)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(CURFEW_BUNDLE_ID).Monitor
+        TARGETED_DEVICE_FAMILY: "1"
+        APPLICATION_EXTENSION_API_ONLY: YES
+
+  CurfewWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widget
+      - path: Shared/Core
+      - path: Shared/Common
+    info:
+      path: Widget/Info.plist
+      properties:
+        CFBundleDisplayName: Curfew
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CurfewKeychainGroup: $(CURFEW_KEYCHAIN_GROUP)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Widget/CurfewWidget.entitlements
+      properties:
+        keychain-access-groups:
+          - $(CURFEW_KEYCHAIN_GROUP)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(CURFEW_BUNDLE_ID).Widget
+        TARGETED_DEVICE_FAMILY: "1"
+        APPLICATION_EXTENSION_API_ONLY: YES
+
+  # The small helper that runs on the Mac in the bedroom and gives off the Bluetooth signal.
+  CurfewMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Mac
+      - path: Shared/Common
+    info:
+      path: Mac/Info.plist
+      properties:
+        CFBundleDisplayName: Curfew
+        CFBundleName: Curfew
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.productivity
+        LSMinimumSystemVersion: "14.0"
+        LSUIElement: true
+        NSBluetoothAlwaysUsageDescription: Curfew gives off a faint Bluetooth signal so your iPhone knows when it's in the bedroom.
+    entitlements:
+      path: Mac/CurfewMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.device.bluetooth: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(CURFEW_BUNDLE_ID).mac
+        PRODUCT_NAME: Curfew
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+        COMBINE_HIDPI_IMAGES: YES
+
+schemes:
+  Curfew:
+    build:
+      targets:
+        Curfew: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  CurfewMac:
+    build:
+      targets:
+        CurfewMac: all
+    run:
+      config: Debug
+    archive:
+      config: Release
